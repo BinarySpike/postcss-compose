@@ -2,7 +2,7 @@
   "name": "postcss-compose",
   "version": "1.0.2",
   "description": "A postcss plugin that implements a @compose feature.",
-  "repository": "gitlab:binaryspike/postcss-compose",
+  "repository": "github:binaryspike/postcss-compose",
   "main": "index.js",
   "author": "Nathan Goings",
   "license": "Apache-2.0",
