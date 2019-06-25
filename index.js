@@ -6,82 +6,63 @@ module.exports = postcss.plugin('postcss-compose', function (data, debug) {
         data = data || {}
         if (debug) console.log("Debug is true");
 
-        function getData(parameter) {
-            var myRegexp = /(\w+) in (\w+)/g
-            var match = myRegexp.exec(parameter)
-            console.log(match[0]) // abc
-            console.log(match[1])
-            console.log(match[2])
-        }
-
         function processAtCompose(atRule) {
             atRule.walkAtRules('compose', (rule) => processAtCompose(rule))
 
             var myRegexp = /(\w+) in (\w+)/g
-            var parameterMatches = myRegexp.exec(parameter)
+            var parameterMatches = myRegexp.exec(atRule.params)
 
             var context = {
-                
+                parameterName: parameterMatches[1],
+                inObject: parameterMatches[2],
             }
 
-            getData(atRule.params)
+            if (objectPath.get(data, context.inObject) == undefined) {
+                throw atRule.error('configured data does not contain this data', { word: context.inObject })
+            }
 
-            atRule.walkRules((rule) => processRule(atRule, rule))
-            atRule.replaceWith(atRule.nodes)
-        }
+            var parameters = objectPath.get(data, context.inObject)
+            Object.keys(parameters).forEach(key => {
+                context.name = key;
+                var value = {}
+                objectPath.set(value, context.parameterName, parameters[key])
+                context.value = value
 
-        function processRule(contextAtRule, rule) {
-            var rules = []
-            var parameters = contextAtRule.params.split(",").map(item => item.trim());
-            parameters.forEach(parameter => {
-                var newRule = rule.clone({ selector: rule.selector.replace('$(1)', parameter) })
-                newRule.walkDecls(decl => processDecl(parameter, decl));
-                newRule.walkAtRules(/^(?!compose).*$/, atRule => processOtherAtRule(parameter, atRule))
-                rules.push(newRule)
+                var newAtRule = atRule.cloneBefore();
+
+                processRules(context, newAtRule);
+
+                newAtRule.replaceWith(newAtRule.nodes);
             })
-            rule.replaceWith(rules);
+            atRule.remove();
         }
 
-        function processDecl(parameter, decl) {
-            decl.value = decl.value.replace('$(1)', parameter);
+        function strReplace(str, context, rule) {
+            var re = new RegExp("\\$\\((" + context.parameterName + "(\\..*)*)\\)", "g");
+            var output = str.replace(re, (match, p1) =>
+            {
+                // p1 contains inner match which is style.foo.bar
+                if (p1 == context.parameterName) return context.name
+                var output = objectPath.get(context.value, p1)
+                if (output == undefined) throw rule.error(`Property not found from ${context.inObject}`, {word: match})
+                return output;
+            })
+            return output;
         }
 
-        function processOtherAtRule(parameter, atRule) {
-            atRule.params = atRule.params.replace('$(1)', parameter)
+        function processRules(context, parent) {
+            parent.walkRules(rule => {
+                rule.selector = strReplace(rule.selector, context, rule);
+                rule.walkDecls(decl => {
+                    decl.value = strReplace(decl.value, context, decl)
+                })
+                rule.walkAtRules(/^(?!compose).*$/, atRule => {
+                    atRule.params = strReplace(atRule.params, context, atRule)
+                })
+            })
+            parent.replaceWith(parent.nodes);
         }
 
         css.walkAtRules('compose', atRule => processAtCompose(atRule))
-
-
     }
 })
-/*
-module.exports = postcss.plugin('postcss-compose', function compose(options) {
-
-    return function (css) {
-
-        options = options || {};
-
-        css.walkAtRules('compose', function (atrule) {
-            var templates = atrule.params.split(",").map(item => item.trim());
-            atrule.walkRules(function (rule) {
-                if (rule.selector.includes('$(1)')) {
-                    templates.forEach(function(template) {
-                        var newRule = rule.clone({ selector: rule.selector.replace('$(1)', template) })
-                        newRule.walkDecls(function (decl) {
-                            decl.value = decl.value.replace('$(1)', template.replace('-','.'))
-                        })
-                        newRule.walkAtRules(function (atRule) {
-                            atRule.params = atRule.params.replace('$(1)', template)
-                        })
-                        atrule.append(newRule);
-                    })
-                    rule.remove();
-                }
-            })
-            atrule.walkRules(rule => css.append(rule));
-            atrule.remove();
-        })
-    }
-
-});*/
